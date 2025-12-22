@@ -1,0 +1,20 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "com.mapextra.mixin",
+  "compatibilityLevel": "JAVA_8",
+  "refmap": "map_extra.refmap.json",
+  "mixins": [
+    "MixinServerPlayerWallFix"
+  ],
+  "client": [
+    "MixinClientLevel",
+    "MixinNetHandlerTeleport"
+  ],
+  "server": [
+    "MixinServerLevel"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

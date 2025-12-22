@@ -1,0 +1,10 @@
+{
+  "wrench_add": {
+    "subtitle": "subtitles.map_extra.wrench_add",
+    "sounds": [ "map_extra:wrench_add" ]
+  },
+  "wrench_remove": {
+    "subtitle": "subtitles.map_extra.wrench_remove",
+    "sounds": [ "map_extra:wrench_remove" ]
+  }
+}
