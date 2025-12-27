@@ -19,6 +19,10 @@ public class ModSounds {
     public static final RegistryObject<SoundEvent> WRENCH_REMOVE = SOUNDS.register("wrench_remove",
             () -> SoundEvent.createVariableRangeEvent(new ResourceLocation(MapExtra.MODID, "wrench_remove")));
 
+    //注册雷达声音
+    public static final RegistryObject<SoundEvent> RADAR = SOUNDS.register("radar",
+            () -> SoundEvent.createVariableRangeEvent(new ResourceLocation(MapExtra.MODID, "radar")));
+
     public static void register(IEventBus eventBus) {
         SOUNDS.register(eventBus);
     }

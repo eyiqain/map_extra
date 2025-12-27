@@ -6,5 +6,9 @@
   "wrench_remove": {
     "subtitle": "subtitles.map_extra.wrench_remove",
     "sounds": [ "map_extra:wrench_remove" ]
+  },
+  "radar": {
+    "subtitle": "subtitles.map_extra.radar",
+    "sounds": [ "map_extra:radar" ]
   }
 }
