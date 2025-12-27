@@ -1,7 +1,15 @@
-package com.mapextra.math; // 确保包名正确
+package com.mapextra.math;
 
 import com.mapextra.world.BorderData;
+import net.minecraft.core.Direction;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.util.Mth;
+import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.HitResult;
+import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.shapes.BooleanOp;
 import net.minecraft.world.phys.shapes.Shapes;
 import net.minecraft.world.phys.shapes.VoxelShape;
@@ -11,56 +19,37 @@ import java.util.List;
 public class BorderCollisionUtils {
 
     // ==========================================
-    // 1. 物理引擎碰撞箱生成 (3D 升级版)
+    // 1. 物理引擎碰撞箱生成 (用于走路撞墙)
     // ==========================================
     public static void addWallCollisions(AABB entityBox, BorderData.BorderEntry entry, List<VoxelShape> shapes) {
         if (entry == null) return;
 
-        // 1. 计算 X 和 Z 的相对范围（相对于边界起点）
-        // 使用 -1 和 +1 是为了稍微扩大搜索范围，防止浮点数精度问题导致漏判
+        // 计算需要检测的范围（相对于地图起点）
         int minX = (int) Math.floor(entityBox.minX - entry.startX) - 1;
         int maxX = (int) Math.ceil(entityBox.maxX - entry.startX) + 1;
-
         int minZ = (int) Math.floor(entityBox.minZ - entry.startZ) - 1;
         int maxZ = (int) Math.ceil(entityBox.maxZ - entry.startZ) + 1;
 
-        // 2. 【新增】计算 Y 轴的绝对范围 (直接基于世界坐标)
-        // 既然已经是 3D 边界，我们也需要只检查实体附近的 Y 高度
-        int minY = (int) Math.floor(entityBox.minY) - 1;
-        int maxY = (int) Math.ceil(entityBox.maxY) + 1;
+        // 遍历范围内的格子
+        for (int x = minX; x <= maxX; x++) {//x与z已经转换为相对坐标
+            for (int z = minZ; z <= maxZ; z++) {
+                if (entry.isWall(x, z)) {
+                    double wallX = entry.startX + x;
+                    double wallZ = entry.startZ + z;
 
-        // 3. 三重循环遍历 (X, Y, Z)
-        for (int x = minX; x <= maxX; x++) { // x 是相对坐标
-            for (int z = minZ; z <= maxZ; z++) { // z 是相对坐标
-                for (int y = minY; y <= maxY; y++) { // y 是绝对坐标 (假设 BorderEntry 内部处理了偏移或直接对应)
+                    // 创建完整的方块碰撞箱 (无限高)
+                    VoxelShape wallShape = Shapes.box(wallX, -64, wallZ, wallX + 1.0, 320, wallZ + 1.0);
 
-                    // 【关键修改】调用新的 3D isWall 方法
-                    // 注意参数顺序，我们在上一步定义的是 (localX, localZ, localY)
-                    if (entry.isWall(x, z, y)) {
-
-                        // 还原回世界坐标用于生成碰撞箱
-                        double wallX = entry.startX + x;
-                        double wallZ = entry.startZ + z;
-                        double wallY = y;
-
-                        // 【关键修改】不再是无限高的柱子 (-64 ~ 320)，而是当前这一个方块 (y ~ y+1)
-                        VoxelShape wallShape = Shapes.box(wallX, wallY, wallZ, wallX + 1.0, wallY + 1.0, wallZ + 1.0);
-
-                        // 精确检测：只有当实体真的碰到这个 1x1x1 的方块时，才加入碰撞列表
-                        if (Shapes.joinIsNotEmpty(wallShape, Shapes.create(entityBox), BooleanOp.AND)) {
-                            shapes.add(wallShape);
-                        }
+                    // 如果实体和这个墙有交集，加入列表
+                    if (Shapes.joinIsNotEmpty(wallShape, Shapes.create(entityBox), BooleanOp.AND)) {
+                        shapes.add(wallShape);
                     }
                 }
             }
         }
     }
 
-
-
-
-
-// ==========================================
+    // ==========================================
     // 2. 锤子射线检测 (用于拆除墙壁)
     // ==========================================
     public record WallHit(int localX, int localZ, Direction enterFace, double t) {
