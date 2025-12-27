@@ -1,6 +1,7 @@
 package com.mapextra.init;
 
 import com.mapextra.item.Hammer;
+import com.mapextra.item.Radar;
 import com.mapextra.item.Wrench;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
