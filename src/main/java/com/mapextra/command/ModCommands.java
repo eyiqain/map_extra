@@ -171,16 +171,26 @@ public class ModCommands {
                                 .executes(ModCommands::helpBorders)
                         )
 
-                        // 1. add <tagName> ...
                         .then(Commands.literal("add")
+
+                                // 原来的：/borders add <name> <x> <z> <w> <d>
                                 .then(Commands.argument("tagName", StringArgumentType.word())
                                         .then(Commands.argument("x", DoubleArgumentType.doubleArg())
                                                 .then(Commands.argument("z", DoubleArgumentType.doubleArg())
-                                                        .then(Commands.argument("w", IntegerArgumentType.integer(1, 10000)) // 稍微改大了上限
+                                                        .then(Commands.argument("w", IntegerArgumentType.integer(1, 10000))
                                                                 .then(Commands.argument("d", IntegerArgumentType.integer(1, 10000))
                                                                         .executes(ModCommands::addBorder)
                                                                 )
                                                         )
+                                                )
+                                        )
+                                )
+
+                                // 新增：/borders add center <name> <radius>
+                                .then(Commands.literal("center")
+                                        .then(Commands.argument("tagName", StringArgumentType.word())
+                                                .then(Commands.argument("radius", IntegerArgumentType.integer(1, 5000))
+                                                        .executes(ModCommands::addBorderCenterRing)
                                                 )
                                         )
                                 )
@@ -735,6 +745,63 @@ private static int modifyBorder(CommandContext<CommandSourceStack> context, java
 
         context.getSource().sendSuccess(() -> Component.literal("已清空所有边界配置 (共删除 " + count + " 个)").withStyle(ChatFormatting.RED, ChatFormatting.BOLD), true);
         return 1;
+    }
+    // /borders add center <name> <radius>
+// 以玩家当前位置 (~ ~ ~) 为中心，radius 为半径，自动算 w/d，并把外围一圈设为 1
+    private static int addBorderCenterRing(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
+        String name = StringArgumentType.getString(context, "tagName");
+        int radius = IntegerArgumentType.getInteger(context, "radius");
+
+        ServerLevel level = context.getSource().getLevel();
+        BorderData data = BorderData.get(level);
+
+        ServerPlayer player = context.getSource().getPlayerOrException();
+        BlockPos center = BlockPos.containing(player.position());
+
+        // 自动算出宽高（方形）：边长 = 2*radius + 1
+        int size = radius * 2 + 1;
+
+        // startX/startZ 为方形左上角（最小 X/Z）
+        double startX = center.getX() - radius;
+        double startZ = center.getZ() - radius;
+
+        // 1) 创建边界（会自动分配 grid）
+        data.addBorder(name, startX, startZ, size, size);
+
+        // 2) 外围一圈置 1
+        BorderData.BorderEntry entry = data.getEntry(name);
+        if (entry != null) {
+            fillBorderOuterRing(entry);
+        }
+
+        // 3) 自动切换创建者编辑焦点
+        data.setPlayerFocus(player.getUUID(), name);
+
+        context.getSource().sendSuccess(
+                () -> Component.literal("已创建中心边界圈 [" + name + "]，中心=" + center.getX() + "," + center.getZ()
+                                + " 半径=" + radius + " (大小=" + size + "x" + size + "，外圈=1)")
+                        .withStyle(ChatFormatting.GREEN),
+                true
+        );
+        return 1;
+    }
+
+    // 工具：把 entry 的外围一圈全部置 1
+    private static void fillBorderOuterRing(BorderData.BorderEntry entry) {
+        int w = entry.width;
+        int d = entry.depth;
+        if (w <= 0 || d <= 0) return;
+
+        // 顶边 & 底边
+        for (int x = 0; x < w; x++) {
+            entry.setWall(x, 0, true);
+            entry.setWall(x, d - 1, true);
+        }
+        // 左边 & 右边
+        for (int z = 0; z < d; z++) {
+            entry.setWall(0, z, true);
+            entry.setWall(w - 1, z, true);
+        }
     }
 // 辅助方法：发送同步包
 private static void syncActiveBorderToAll(ServerLevel level, BorderData data) {
