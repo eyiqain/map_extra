@@ -1,7 +1,10 @@
 package com.mapextra.item;
 
+import com.mapextra.client.render.GeometryCache;
+import com.mapextra.net.ModMessage;
+import com.mapextra.net.PacketShareQuadCount;
 import net.minecraft.network.chat.Component;
-import net.minecraft.sounds.SoundEvents; // ✅ 新增：导入原版声音事件
+import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResultHolder;
@@ -15,10 +18,10 @@ import net.minecraft.world.level.Level;
 
 import java.util.List;
 
+import static com.mapextra.client.render.GeometryCache.RADAR_RANGE;
+
 public class Radar extends Item {
-    // 默认50米
     public static int SEARCH_RANGE = 50;
-    // 默认冷却3秒
     public static int COOLDOWN_TICKS = 60;
 
     public Radar(Properties properties){
@@ -27,6 +30,17 @@ public class Radar extends Item {
 
     @Override
     public InteractionResultHolder<ItemStack> use(Level level, Player player, InteractionHand UsedHand){
+
+        // ✅ 1. 客户端逻辑：读取缓存，打包发给服务端
+        if (level.isClientSide) {
+            // 获取单例中的面数
+            RADAR_RANGE.rebuild(player);
+            int faceCount = GeometryCache.getInstance().getQuadCount();
+            // 发送包到服务端 (让服务端去广播给所有人)
+            ModMessage.sendToServer(new PacketShareQuadCount(faceCount));
+        }
+
+        // ✅ 2. 服务端逻辑：原有的搜人功能
         if (!level.isClientSide){
             AABB searchArea = player.getBoundingBox().inflate((double)SEARCH_RANGE);
             List<Player> players = level.getEntitiesOfClass(Player.class, searchArea, p -> p != player && !p.isSpectator());
@@ -44,14 +58,13 @@ public class Radar extends Item {
 
             if (nearestTarget != null){
                 double actualDistance = Math.sqrt(minDistance);
-
-                // ✅ 修改 1：成功音效 -> 经验球声
-                // volume: 0.3F (更小声), pitch: 1.0F (正常音调，你可以改成 2.0F 会更尖锐像电子雷达)
                 level.playSound(null, player.getX(), player.getY(), player.getZ(),
                         SoundEvents.EXPERIENCE_ORB_PICKUP, SoundSource.PLAYERS, 0.3F, 1.0F);
 
+                // 为了不遮挡上面的“面数统计广播”，这里我们把搜到人的信息发到聊天栏 (false)
+                // 如果你坚持要 Action Bar，那两个信息会打架（闪烁），建议搜人结果放聊天栏
                 player.displayClientMessage(Component.literal("§e🔍发现目标: §f" + nearestTarget.getName().getString() +
-                        " §7(距离: " + String.format("%.1f", actualDistance) + "m)"), true);
+                        " §7(距离: " + String.format("%.1f", actualDistance) + "m)"), false);
 
                 nearestTarget.displayClientMessage(
                         Component.literal("👁你已被抓捕者发现！").withStyle(style -> style.withColor(0xFF0000).withBold(true)),
@@ -62,12 +75,11 @@ public class Radar extends Item {
                 player.getCooldowns().addCooldown(this, COOLDOWN_TICKS);
 
             } else {
-                // ✅ 修改 2：失败音效 -> 发射器空发声
-                // volume: 0.4F (稍微小声), pitch: 1.2F (稍微高一点的咔哒声)
                 level.playSound(null, player.getX(), player.getY(), player.getZ(),
                         SoundEvents.DISPENSER_FAIL, SoundSource.PLAYERS, 0.4F, 1.2F);
 
-                player.displayClientMessage(Component.literal("§c❌范围内没有其他玩家"), true);
+                // 没搜到人也发到聊天栏，把 Action Bar 让给面数统计
+                player.displayClientMessage(Component.literal("§c❌范围内没有其他玩家"), false);
                 player.getCooldowns().addCooldown(this, 20);
             }
         }

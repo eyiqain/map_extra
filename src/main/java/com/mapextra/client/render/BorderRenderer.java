@@ -20,7 +20,8 @@ import java.util.List;
 
 public class BorderRenderer extends RenderType {
 
-    public BorderRenderer(String name, VertexFormat format, VertexFormat.Mode mode, int bufferSize, boolean affectsCrumbling, boolean sortOnUpload, Runnable setupState, Runnable clearState) {
+    public BorderRenderer(String name, VertexFormat format, VertexFormat.Mode mode, int bufferSize,
+                          boolean affectsCrumbling, boolean sortOnUpload, Runnable setupState, Runnable clearState) {
         super(name, format, mode, bufferSize, affectsCrumbling, sortOnUpload, setupState, clearState);
     }
 
@@ -28,10 +29,6 @@ public class BorderRenderer extends RenderType {
     private static final float HAMMER_R = 1.0f;
     private static final float HAMMER_G = 0.2f;
     private static final float HAMMER_B = 0.0f;
-
-    private static final float NORMAL_R = 0.3f;
-    private static final float NORMAL_G = 0.3f;
-    private static final float NORMAL_B = 0.3f;
 
     private static final RenderType DEPTH_PASS = create(
             "mapextra_border_depth",
@@ -69,7 +66,7 @@ public class BorderRenderer extends RenderType {
     private static final List<WallPos> RENDER_QUEUE = new ArrayList<>();
 
     private static class WallPos {
-        int worldX, worldZ; // 这里存世界坐标，方便画图
+        int worldX, worldZ;
         double distSq;
         boolean n, s, w, e;
 
@@ -97,25 +94,18 @@ public class BorderRenderer extends RenderType {
 
         if (data == null) return;
 
-        // === 1. 准备基础数据 ===
         int startX = (int) data.startX;
         int startZ = (int) data.startZ;
-        int width = (int) data.width;
-        int depth = (int) data.depth;
+        int width  = (int) data.width;
+        int depth  = (int) data.depth;
 
         double pX = mc.player.getX();
         double pZ = mc.player.getZ();
         double maxRangeSq = maxRange * maxRange;
 
-        // === 2. 计算相对坐标的循环范围 (Relative Loop Range) ===
-        // 我们想让 rx 从 0 循环到 width。
-        // 但是为了性能，我们需要把循环卡在玩家周围 maxRange 的范围内。
-
-        // 玩家相对于墙起点的坐标
         int relPlayerX = (int)(pX - startX);
         int relPlayerZ = (int)(pZ - startZ);
 
-        // 算出“相对坐标”下的循环起点和终点
         int loopMinRx = Math.max(0, relPlayerX - (int)maxRange - 1);
         int loopMaxRx = Math.min(width, relPlayerX + (int)maxRange + 1);
         int loopMinRz = Math.max(0, relPlayerZ - (int)maxRange - 1);
@@ -123,317 +113,188 @@ public class BorderRenderer extends RenderType {
 
         RENDER_QUEUE.clear();
 
-        // === 3. 开始循环 (全部使用相对坐标 rx, rz) ===
-        // rx = 0 代表墙的最左边，rx = width 代表墙的最右边
-        // 这样 isWall(rx, rz) 永远不会越界，也不会错位！
         for (int rx = loopMinRx; rx < loopMaxRx; rx++) {
             for (int rz = loopMinRz; rz < loopMaxRz; rz++) {
 
-                // 直接用相对坐标查表，绝对准确
                 if (!data.isWall(rx, rz)) continue;
 
-                // 还原成世界坐标，用于计算距离和最终渲染
                 int worldX = startX + rx;
                 int worldZ = startZ + rz;
 
-                // 距离判断 (用世界坐标算)
                 double dx = (worldX + 0.5) - pX;
                 double dz = (worldZ + 0.5) - pZ;
                 double distSq = dx * dx + dz * dz;
                 if (distSq > maxRangeSq) continue;
 
-                // 邻居判断 (传入相对坐标，非常清晰)
-                boolean n = isWallSafeRelative(data, rx, rz - 1, width, depth); // 北
-                boolean s = isWallSafeRelative(data, rx, rz + 1, width, depth); // 南
-                boolean w = isWallSafeRelative(data, rx - 1, rz, width, depth); // 西
-                boolean e = isWallSafeRelative(data, rx + 1, rz, width, depth); // 东
+                boolean n = isWallSafeRelative(data, rx, rz - 1, width, depth);
+                boolean s = isWallSafeRelative(data, rx, rz + 1, width, depth);
+                boolean w = isWallSafeRelative(data, rx - 1, rz, width, depth);
+                boolean e = isWallSafeRelative(data, rx + 1, rz, width, depth);
 
-                // 如果被包围，剔除
                 if (n && s && w && e) continue;
 
-                // 加入队列，存的是世界坐标(方便画图)
                 RENDER_QUEUE.add(new WallPos(worldX, worldZ, distSq, n, s, w, e));
             }
         }
 
-        // 4. 排序
         RENDER_QUEUE.sort(Comparator.comparingDouble(obj -> obj.distSq));
 
-        // 5. 绘制
         Matrix4f matrix = poseStack.last().pose();
 
-        // 获取 RenderType buffer
         VertexConsumer depthBuilder = bufferSource.getBuffer(DEPTH_PASS);
-        // 【修改】传入 mc.player
-        drawQueue(depthBuilder, matrix, false, isHammer, mc.player);
+        renderWithAPI(depthBuilder, matrix, false, isHammer, mc.player);
 
         VertexConsumer colorBuilder = bufferSource.getBuffer(COLOR_PASS);
-        // 【修改】传入 mc.player
-        drawQueue(colorBuilder, matrix, true, isHammer, mc.player);
+        renderWithAPI(colorBuilder, matrix, true, isHammer, mc.player);
 
-        // 6. 强制刷新 (不用变)
-        if (bufferSource instanceof MultiBufferSource.BufferSource) {
-            MultiBufferSource.BufferSource bs = (MultiBufferSource.BufferSource) bufferSource;
+        if (bufferSource instanceof MultiBufferSource.BufferSource bs) {
             bs.endBatch(DEPTH_PASS);
             bs.endBatch(COLOR_PASS);
         }
     }
 
-    /**
-     * 【重写的 helper】
-     * 专门处理相对坐标的邻居检测
-     * rx, rz: 要检查的相对坐标
-     * width, depth: 数组的边界
-     */
     private static boolean isWallSafeRelative(BorderData.BorderEntry data, int rx, int rz, int width, int depth) {
-        // 如果相对坐标超出了数组范围 (比如 -1 或 >= width)
-        // 说明这里是“边界外面”，也就是空气，返回 false 让它画出墙面
-        if (rx < 0 || rx >= width || rz < 0 || rz >= depth) {
-            return false;
-        }
-        // 在范围内，安全查表
+        if (rx < 0 || rx >= width || rz < 0 || rz >= depth) return false;
         return data.isWall(rx, rz);
     }
 
-    // 【修改】参数增加了 Player player
-    private static void drawQueue(VertexConsumer builder, Matrix4f matrix, boolean withColor, boolean isHammer, net.minecraft.world.entity.player.Player player) {
+    /**
+     * 用 QuadFxAPI 统一渲染：
+     * - 锤子：flat 无限高墙 +（调试）紫色半径3地面网格渐变
+     * - 普通：spot + 原版算法shader（等价你 drawSubQuad）
+     */
+    private static void renderWithAPI(VertexConsumer builder, Matrix4f matrix, boolean withColor,
+                                      boolean isHammer, net.minecraft.world.entity.player.Player player) {
 
-        // === 模式 A: 锤子模式 (上帝视角，无限高墙) ===
-        // (这部分代码完全保持不变)
+        double eyeX = player.getX();
+        double eyeY = player.getEyeY();
+        double eyeZ = player.getZ();
+
+        // ================================
+        // 模式 A：锤子模式（无限高墙）
+        // ================================
         if (isHammer) {
-            float r = HAMMER_R;
-            float g = HAMMER_G;
-            float b = HAMMER_B;
-            float a = 0.4f;
-            float minY = -64.0f;
-            float maxY = 320.0f;
+            var flat = QuadFxAPI.flat()
+                    .color(HAMMER_R, HAMMER_G, HAMMER_B, 0.4f)
+                    .wallHeight(-64f, 320f)
+                    .clear();
 
             for (WallPos wall : RENDER_QUEUE) {
                 int x = wall.worldX;
                 int z = wall.worldZ;
-                if (!wall.n) addQuad(builder, matrix, x + 1, maxY, z, x, maxY, z, x, minY, z, x + 1, minY, z, r, g, b, a, withColor);
-                if (!wall.s) addQuad(builder, matrix, x + 1, minY, z + 1, x + 1, maxY, z + 1, x, maxY, z + 1, x, minY, z + 1, r, g, b, a, withColor);
-                if (!wall.w) addQuad(builder, matrix, x, minY, z + 1, x, maxY, z + 1, x, maxY, z, x, minY, z, r, g, b, a, withColor);
-                if (!wall.e) addQuad(builder, matrix, x + 1, minY, z, x + 1, maxY, z, x + 1, maxY, z + 1, x + 1, minY, z + 1, r, g, b, a, withColor);
+
+                if (!wall.n) flat.face(x, 0, z, QuadFxAPI.FaceDir.NORTH, eyeX, eyeY, eyeZ);
+                if (!wall.s) flat.face(x, 0, z, QuadFxAPI.FaceDir.SOUTH, eyeX, eyeY, eyeZ);
+                if (!wall.w) flat.face(x, 0, z, QuadFxAPI.FaceDir.WEST,  eyeX, eyeY, eyeZ);
+                if (!wall.e) flat.face(x, 0, z, QuadFxAPI.FaceDir.EAST,  eyeX, eyeY, eyeZ);
             }
-            return;
-        }
 
-        // === 模式 B: 游玩模式 ===
-        double pX = player.getX();
-        double pY = player.getEyeY();
-        double pZ = player.getZ();
+            flat.render(builder, matrix, withColor);
 
-        // 垂直范围 ±12 (虽然光斑小，但为了防止你抬头低头时光斑被切断，范围还是要大)
-        int startY = (int) Math.floor(pY - 12.0);
-        int endY = (int) Math.ceil(pY + 12.0);
+            // 2. 画地形贴合网格 (ModelGeometryUtil 版)
+            // 这一步完美解决了门、栅栏、楼梯的形状问题
 
-        int sub = 2;
-        double step = 1.0 / sub;
+            // 定义 Shader (紫色地形网格)
+            var terrainShader = new QuadFxAPI.FalloffSpotShader()
+                    .range(12.0, 10.0, 5.0)
+                    .useCenterForShading(false);
 
-        for (WallPos wall : RENDER_QUEUE) {
-            int wx = wall.worldX;
-            int wz = wall.worldZ;
+            var spot = QuadFxAPI.spot()
+                    .eye(eyeX, eyeY, eyeZ)
+                    .center(player.getX(), player.getY(), player.getZ())
+                    .shader(terrainShader)
+                    .maxDist(16.0)
+                    .detail(2)
+                    .clear();
 
-            for (int y = startY; y <= endY; y++) {
-                for (int i = 0; i < sub; i++) {
-                    double localY = y + (i * step);
-                    double localY2 = localY + step;
-                    double centerY = localY + (step / 2.0);
+            net.minecraft.world.level.Level level = player.level();
+            int radius = 10;
+            int px = (int)Math.floor(player.getX());
+            int py = (int)Math.floor(player.getY());
+            int pz = (int)Math.floor(player.getZ());
 
-                    // 预先计算垂直方向的扩散 (Vertical Spread)
-                    // 即：墙面上的点的高度 - 玩家眼睛高度
-                    double dy = centerY - pY;
-                    double dySq = dy * dy;
+            // 为了减少对象创建，复用 MutableBlockPos
+            net.minecraft.core.BlockPos.MutableBlockPos mPos = new net.minecraft.core.BlockPos.MutableBlockPos();
 
-                    for (int j = 0; j < sub; j++) {
-                        double offset1 = j * step;
-                        double offset2 = offset1 + step;
-                        double centerOffset = offset1 + (step / 2.0);
+            for (int x = px - radius; x <= px + radius; x++) {
+                for (int z = pz - radius; z <= pz + radius; z++) {
 
-                        // 对于每一个朝向，我们需要计算水平扩散 (Horizontal Spread)
-                        // SpreadSq = 水平偏差平方 + 垂直偏差平方
+                    // 简单的水平距离剔除，优化性能
+                    double dx = (x + 0.5) - player.getX();
+                    double dz = (z + 0.5) - player.getZ();
+                    if (dx*dx + dz*dz > radius * radius) continue;
 
-                        if (!wall.n) {
-                            double centerX = wx + centerOffset;
-                            double centerZ = wz;
-                            // 北墙: 水平偏差是 X 轴差距
-                            double dx = centerX - pX;
-                            double spreadSq = dx*dx + dySq; // 【计算扩散】
+                    // 垂直扫描范围：玩家脚下 -2 到 +3
+                    int yMin = py - 2;
+                    int yMax = py + 3;
 
-                            drawSubQuad(builder, matrix,
-                                    wx + offset2, localY2, wz, wx + offset1, localY2, wz,
-                                    wx + offset1, localY, wz, wx + offset2, localY, wz,
-                                    centerX, centerY, centerZ, pX, pY, pZ,
-                                    spreadSq, // 【传入】
-                                    withColor);
-                        }
+                    for (int y = yMin; y <= yMax; y++) {
+                        mPos.set(x, y, z);
+                        net.minecraft.world.level.block.state.BlockState state = level.getBlockState(mPos);
 
-                        if (!wall.s) {
-                            double centerX = wx + centerOffset;
-                            double centerZ = wz + 1.0;
-                            // 南墙: 水平偏差是 X 轴差距
-                            double dx = centerX - pX;
-                            double spreadSq = dx*dx + dySq;
+                        // 1. 过滤空气
+                        if (state.isAir()) continue;
 
-                            drawSubQuad(builder, matrix,
-                                    wx + offset2, localY, wz + 1, wx + offset2, localY2, wz + 1,
-                                    wx + offset1, localY2, wz + 1, wx + offset1, localY, wz + 1,
-                                    centerX, centerY, centerZ, pX, pY, pZ,
-                                    spreadSq,
-                                    withColor);
-                        }
+                        // 2. 过滤掉完全透明或不想显示的方块（可选）
+                        // if (!state.getMaterial().isSolid()) continue;
 
-                        if (!wall.w) {
-                            double centerX = wx;
-                            double centerZ = wz + centerOffset;
-                            // 西墙: 水平偏差是 Z 轴差距 (因为墙面沿Z轴延伸)
-                            double dz = centerZ - pZ;
-                            double spreadSq = dz*dz + dySq;
-
-                            drawSubQuad(builder, matrix,
-                                    wx, localY, wz + offset2, wx, localY2, wz + offset2,
-                                    wx, localY2, wz + offset1, wx, localY, wz + offset1,
-                                    centerX, centerY, centerZ, pX, pY, pZ,
-                                    spreadSq,
-                                    withColor);
-                        }
-
-                        if (!wall.e) {
-                            double centerX = wx + 1.0;
-                            double centerZ = wz + centerOffset;
-                            // 东墙: 水平偏差是 Z 轴差距
-                            double dz = centerZ - pZ;
-                            double spreadSq = dz*dz + dySq;
-
-                            drawSubQuad(builder, matrix,
-                                    wx + 1, localY, wz + offset1, wx + 1, localY2, wz + offset1,
-                                    wx + 1, localY2, wz + offset2, wx + 1, localY, wz + offset2,
-                                    centerX, centerY, centerZ, pX, pY, pZ,
-                                    spreadSq,
-                                    withColor);
-                        }
+                        // 3. 【核心调用】直接提取模型几何体
+                        // ✅ 使用混合模式：自动处理 门(Model) 和 床(Shape)
+                        ModelGeometryUtil.extractHybrid(level, mPos, state, spot::quad);
                     }
                 }
             }
+
+            spot.render(builder, matrix, withColor);
+
+            // ✅ 新增：每帧结束后调用结算
+            ModelGeometryUtil.endFrame();
+
+            return;
         }
+
+        // ================================
+        // 模式 B：游玩模式（原版光斑）
+        // ================================
+        double yMin = eyeY - 12.0;
+        double yMax = eyeY + 12.0;
+
+        // ✅ 原版算法 shader（等价你原 drawSubQuad 的计算）
+        var shader = new QuadFxAPI.FalloffSpotShader().useCenterForShading(false);
+
+        var spot = QuadFxAPI.spot()
+                .eye(eyeX, eyeY, eyeZ)
+                .shader(shader)
+                .maxDist(12.0)
+                .detail(2)               // ✅ detail=2 => 0.5×0.5（对应你原 sub=2 + step=0.5 的方格观感）
+                .alphaEpsilon(0.005f)
+                .clear();
+
+        for (WallPos wall : RENDER_QUEUE) {
+            int x = wall.worldX;
+            int z = wall.worldZ;
+
+            if (!wall.n) spot.wallColumn(x, z, QuadFxAPI.FaceDir.NORTH, yMin, yMax);
+            if (!wall.s) spot.wallColumn(x, z, QuadFxAPI.FaceDir.SOUTH, yMin, yMax);
+            if (!wall.w) spot.wallColumn(x, z, QuadFxAPI.FaceDir.WEST,  yMin, yMax);
+            if (!wall.e) spot.wallColumn(x, z, QuadFxAPI.FaceDir.EAST,  yMin, yMax);
+        }
+
+        spot.render(builder, matrix, withColor);
     }
 
     /**
-     * 处理子网格的距离计算和颜色生成
+     * 原版 drawSubQuad() 逻辑搬进 Shader：
+     * - spreadSq：由 API 根据 dirHint 计算（墙面 N/S 用 X+Y，E/W 用 Z+Y）
+     * - totalDist：用 eye 的 3D 距离
+     * - alpha：max(baseAlpha, abyssAlpha)
+     * - 10~12 fade
+     * - 雾化颜色
      */
     /**
-     * @param spreadSq 扩散距离的平方 (光斑在墙面上的大小)
+     * 原版 drawSubQuad() 逻辑搬进 Shader
+     * 现已增强：支持链式调用修改参数，以便 Hammer 模式复用
      */
-    private static void drawSubQuad(VertexConsumer builder, Matrix4f matrix,
-                                    double x1, double y1, double z1,
-                                    double x2, double y2, double z2,
-                                    double x3, double y3, double z3,
-                                    double x4, double y4, double z4,
-                                    double cx, double cy, double cz,
-                                    double px, double py, double pz,
-                                    double spreadSq, // 扩散距离平方
-                                    boolean withColor) {
 
-        // 1. 全局距离计算
-        double dx = cx - px;
-        double dy = cy - py;
-        double dz = cz - pz;
-        double totalDistSq = dx * dx + dy * dy + dz * dz;
 
-        // 深度剔除：超过 12 米完全不渲染
-        if (totalDistSq >= 144.0) return;
-
-        // === 2. 独立定义两个光斑的半径 ===
-
-        // 外层半径 (提示层): 设为 3.5 米 (比较大，容易看见)
-        double outerRadius = 3.5;
-        double outerRadiusSq = outerRadius * outerRadius; // 12.25
-
-        // 内层半径 (深渊层): 设为 2.2 米 (比较小，聚焦感强)
-        double innerRadius = 2.2;
-        double innerRadiusSq = innerRadius * innerRadius; // 4.84
-
-        // 总体剔除：如果超出了最大的那个圆(外层)，就直接不画了
-        if (spreadSq >= outerRadiusSq) return;
-
-        double totalDist = Math.sqrt(totalDistSq);
-        double spreadDist = Math.sqrt(spreadSq);
-
-        // === 3. 计算外层 Alpha (大光环) ===
-        float baseAlpha = 0.0f;
-
-        // 只有在 spreadSq < outerRadiusSq 时才计算 (上面已经剔除了，这里肯定满足)
-        // 归一化: 0.0(中心) -> 1.0(外层边缘)
-        double outerSpreadFactor = spreadDist / outerRadius;
-        // 形状曲线: 2.0 次方 (比较柔和的圆)
-        double outerShape = 1.0 - Math.pow(outerSpreadFactor, 2.0);
-
-        // 基础透明度 0.15
-        baseAlpha = (float) (0.35f * outerShape);
-
-        // === 4. 计算内层 Alpha (小黑核) ===
-        float abyssAlpha = 0.0f;
-
-        // 只有满足两个条件才渲染内层：
-        // A. 深度足够近 (< 5米)
-        // B. 扩散足够小 (< 2.2米，即在内层圆圈里)
-        if (totalDist < 5.0 && spreadSq < innerRadiusSq) {
-
-            // 深度因子 (控制吸入感)
-            double depthFactor = totalDist / 5.0;
-            float depthStrength = (float) (0.9 * (1.0 - Math.pow(depthFactor, 3.5)));
-
-            // 扩散因子 (控制内层圆的形状)
-            double innerSpreadFactor = spreadDist / innerRadius;
-            // 形状曲线: 3.0 次方 (边缘稍微锐利一点，和外层区分开)
-            double innerShape = 1.0 - Math.pow(innerSpreadFactor, 3.0);
-
-            // 最终内层透明度 = 深度强度 * 圆圈形状
-            abyssAlpha = (float) (depthStrength * innerShape);
-        }
-
-        // === 5. 混合 (取最大值) ===
-        // 效果：中心区域取 abyssAlpha (深色)，边缘区域取 baseAlpha (淡色光环)
-        float finalAlpha = Math.max(baseAlpha, abyssAlpha);
-
-        // === 6. 远距离消隐 (10-12米) ===
-        if (totalDist > 10.0) {
-            double fade = (12.0 - totalDist) / 2.0;
-            finalAlpha *= fade;
-        }
-
-        if (finalAlpha <= 0.005f) return;
-
-        // === 7. 颜色逻辑 ===
-        float baseR = 0.0f;
-        float baseG = 0.0f;
-        float baseB = 0.05f;
-
-        // 远处的雾效颜色
-        double mistFactor = Math.min(1.0, totalDist / 8.0);
-        float r = baseR + (float)(mistFactor * 0.3);
-        float g = baseG + (float)(mistFactor * 0.3);
-        float b = baseB + (float)(mistFactor * 0.5);
-
-        addQuad(builder, matrix, x1, y1, z1, x2, y2, z2, x3, y3, z3, x4, y4, z4, r, g, b, finalAlpha, withColor);
-    }
-    private static void addQuad(VertexConsumer builder, Matrix4f matrix,
-                                double x1, double y1, double z1,
-                                double x2, double y2, double z2,
-                                double x3, double y3, double z3,
-                                double x4, double y4, double z4,
-                                float r, float g, float b, float a, boolean withColor) {
-        if (withColor) {
-            builder.vertex(matrix, (float)x1, (float)y1, (float)z1).color(r, g, b, a).endVertex();
-            builder.vertex(matrix, (float)x2, (float)y2, (float)z2).color(r, g, b, a).endVertex();
-            builder.vertex(matrix, (float)x3, (float)y3, (float)z3).color(r, g, b, a).endVertex();
-            builder.vertex(matrix, (float)x4, (float)y4, (float)z4).color(r, g, b, a).endVertex();
-        } else {
-            builder.vertex(matrix, (float)x1, (float)y1, (float)z1).endVertex();
-            builder.vertex(matrix, (float)x2, (float)y2, (float)z2).endVertex();
-            builder.vertex(matrix, (float)x3, (float)y3, (float)z3).endVertex();
-            builder.vertex(matrix, (float)x4, (float)y4, (float)z4).endVertex();
-        }
-    }
 }

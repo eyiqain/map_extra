@@ -83,6 +83,12 @@ public class ModMessage {
                 .decoder(PacketSyncBorderNames::decode)
                 .consumerMainThread(PacketSyncBorderNames::handle)
                 .add();
+        // ✅ 9. 【新增】分享面数统计 (Client -> Server)
+        NETWORK.messageBuilder(PacketShareQuadCount.class, id(), NetworkDirection.PLAY_TO_SERVER)
+                .encoder(PacketShareQuadCount::encode)
+                .decoder(PacketShareQuadCount::decode)
+                .consumerMainThread(PacketShareQuadCount::handle)
+                .add();
 
     }
 

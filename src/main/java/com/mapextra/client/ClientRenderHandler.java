@@ -4,6 +4,7 @@ import com.mapextra.MapExtra;
 import com.mapextra.client.render.BeaconRenderer;
 import com.mapextra.client.render.BorderRenderer;
 import com.mapextra.client.render.FocusPointRenderer;
+import com.mapextra.client.render.RadarRenderer;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.PoseStack;
 import net.minecraft.client.Minecraft;
@@ -46,6 +47,8 @@ public class ClientRenderHandler {
 
         // === 3. 调用世界边界渲染器 ===
         BorderRenderer.render(poseStack, bufferSource);
+
+        RadarRenderer.render(poseStack, bufferSource);
 
         // === 统一结束批处理 ===
         // 这里非常关键！如果不手动 endBatch，你的自定义 RenderType 可能不会立即绘制
