@@ -2,6 +2,7 @@ package com.mapextra.item;
 
 import com.mapextra.client.render.GeometryCache;
 import com.mapextra.net.ModMessage;
+import com.mapextra.net.PacketRadarScanRequest;
 import com.mapextra.net.PacketShareQuadCount;
 import net.minecraft.network.chat.Component;
 import net.minecraft.sounds.SoundEvents;
@@ -32,13 +33,17 @@ public class Radar extends Item {
     public InteractionResultHolder<ItemStack> use(Level level, Player player, InteractionHand UsedHand){
 
         // ✅ 1. 客户端逻辑：读取缓存，打包发给服务端
-        if (level.isClientSide) {
-            // 获取单例中的面数
-            RADAR_RANGE.rebuild(player);
-            int faceCount = GeometryCache.getInstance().getQuadCount();
-            // 发送包到服务端 (让服务端去广播给所有人)
-            ModMessage.sendToServer(new PacketShareQuadCount(faceCount));
-        }
+//        if (level.isClientSide) {
+//            // 获取单例中的面数
+//            RADAR_RANGE.rebuild(player);
+//            int faceCount = GeometryCache.getInstance().getQuadCount();
+//            // 发送包到服务端 (让服务端去广播给所有人)
+//            ModMessage.sendToServer(new PacketShareQuadCount(faceCount));
+//        }
+         // ✅ 1. 客户端逻辑：读取缓存，打包发给服务端
+                if (level.isClientSide) {
+                    ModMessage.sendToServer(new PacketRadarScanRequest());
+                }
 
         // ✅ 2. 服务端逻辑：原有的搜人功能
         if (!level.isClientSide){
@@ -60,18 +65,10 @@ public class Radar extends Item {
                 double actualDistance = Math.sqrt(minDistance);
                 level.playSound(null, player.getX(), player.getY(), player.getZ(),
                         SoundEvents.EXPERIENCE_ORB_PICKUP, SoundSource.PLAYERS, 0.3F, 1.0F);
-
-                // 为了不遮挡上面的“面数统计广播”，这里我们把搜到人的信息发到聊天栏 (false)
-                // 如果你坚持要 Action Bar，那两个信息会打架（闪烁），建议搜人结果放聊天栏
-                player.displayClientMessage(Component.literal("§e🔍发现目标: §f" + nearestTarget.getName().getString() +
-                        " §7(距离: " + String.format("%.1f", actualDistance) + "m)"), false);
-
                 nearestTarget.displayClientMessage(
                         Component.literal("👁你已被抓捕者发现！").withStyle(style -> style.withColor(0xFF0000).withBold(true)),
                         true
                 );
-
-                nearestTarget.addEffect(new MobEffectInstance(MobEffects.GLOWING, 60, 0, false, false));
                 player.getCooldowns().addCooldown(this, COOLDOWN_TICKS);
 
             } else {

@@ -89,6 +89,19 @@ public class ModMessage {
                 .decoder(PacketShareQuadCount::decode)
                 .consumerMainThread(PacketShareQuadCount::handle)
                 .add();
+        // ✅ 10. 雷达扫描请求 (Client -> Server)
+        NETWORK.messageBuilder(PacketRadarScanRequest.class, id(), NetworkDirection.PLAY_TO_SERVER)
+                .encoder(PacketRadarScanRequest::encode)
+                .decoder(PacketRadarScanRequest::decode)
+                .consumerMainThread(PacketRadarScanRequest::handle)
+                .add();
+
+        // ✅ 11. 雷达扫描同步 (Server -> Client)
+        NETWORK.messageBuilder(PacketRadarScanSync.class, id(), NetworkDirection.PLAY_TO_CLIENT)
+                .encoder(PacketRadarScanSync::encode)
+                .decoder(PacketRadarScanSync::decode)
+                .consumerMainThread(PacketRadarScanSync::handle)
+                .add();
 
     }
 

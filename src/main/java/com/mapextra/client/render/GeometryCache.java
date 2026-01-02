@@ -1,9 +1,12 @@
 package com.mapextra.client.render;
 
+import com.mapextra.net.PacketRadarScanSync;
 import net.minecraft.core.BlockPos;
+import net.minecraft.world.entity.decoration.ArmorStand;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.AABB;
 
 import java.util.*;
 
@@ -13,7 +16,7 @@ public class GeometryCache {
     public static GeometryCache getInstance() { return RADAR_RANGE; }
 
     // 自动过期时间：3秒（3000毫秒）
-    private static final long EXPIRE_TIME = 3000L;
+    private static final long EXPIRE_TIME = 4000L;
     // 扫描半径
     private static final int SCAN_RADIUS = 30;
 
@@ -132,11 +135,10 @@ public class GeometryCache {
             }
         }
 
-        // 2) ✅ 采集范围内玩家作为 targets（r 可能不存在 -> targets 可能为空）
-        //    这里用水平距离 r（更像雷达），你要 3D 也可以改成 dy 一起算。
         long now = System.currentTimeMillis();
         List<ScanTarget> targets = new ArrayList<>();
 
+// 2.1 玩家：保持原逻辑
         for (Player p : level.players()) {
             if (p == player) continue;
 
@@ -145,15 +147,32 @@ public class GeometryCache {
             double r = Math.sqrt(dx*dx + dz*dz);
 
             if (r <= SCAN_RADIUS) {
-                // 触发时间：扫描波前到达该半径的时刻
+                long triggerMs = now + (long)((r / WAVE_SPEED) * 1000.0);
+                targets.add(new ScanTarget(p.getUUID(), p.getX(), p.getY(), p.getZ(), r, triggerMs));
+            }
+        }
+
+        // 2.2 ✅ 盔甲架：当“假玩家目标”加入 targets
+        AABB box = new AABB(
+                playerX - SCAN_RADIUS, playerY - 256, playerZ - SCAN_RADIUS,
+                playerX + SCAN_RADIUS, playerY + 256, playerZ + SCAN_RADIUS
+        );
+
+        for (ArmorStand as : level.getEntitiesOfClass(ArmorStand.class, box)) {
+            // 可选：排除不可见/marker 的盔甲架
+            if (as.isMarker()) continue;
+
+            double dx = as.getX() - playerX;
+            double dz = as.getZ() - playerZ;
+            double r = Math.sqrt(dx*dx + dz*dz);
+
+            if (r <= SCAN_RADIUS) {
                 long triggerMs = now + (long)((r / WAVE_SPEED) * 1000.0);
 
-                targets.add(new ScanTarget(
-                        p.getUUID(),
-                        p.getX(), p.getY(), p.getZ(),
-                        r,
-                        triggerMs
-                ));
+                // ✅ 关键：用 UUID.nameUUIDFromBytes 给盔甲架生成稳定 uuid（不会和玩家冲突）
+                UUID fakeId = UUID.nameUUIDFromBytes(("armorstand:" + as.getId()).getBytes());
+
+                targets.add(new ScanTarget(fakeId, as.getX(), as.getY(), as.getZ(), r, triggerMs));
             }
         }
 
@@ -186,5 +205,74 @@ public class GeometryCache {
     public Deque<CacheEntry> getCacheQueue() {
         removeExpiredEntries();
         return cacheQueue;
+    }
+    //服务端了
+    // GeometryCache.java 里新增方法（放在 rebuild 下面就行）
+    public void offerServerScan(Level level,
+                                double originX, double originY, double originZ,
+                                List<PacketRadarScanSync.Target> serverTargets) {
+
+        // 1) 本地 rebuild 面：以服务端给的中心点为基准
+        List<QuadFxAPI.QuadJob> tempQuads = rebuildAt(level, originX, originY, originZ);
+
+        // 2) 把服务端 targets 转成本地 ScanTarget（算 r + triggerMs）
+        long now = System.currentTimeMillis();
+        List<ScanTarget> targets = new ArrayList<>();
+
+        if (serverTargets != null) {
+            for (PacketRadarScanSync.Target t : serverTargets) {
+                double dx = t.x - originX;
+                double dz = t.z - originZ;
+                double r = Math.sqrt(dx*dx + dz*dz);
+
+                // r 可能超出（防御一下）
+                if (r <= SCAN_RADIUS) {
+                    long triggerMs = now + (long)((r / WAVE_SPEED) * 1000.0);
+
+                    targets.add(new ScanTarget(
+                            t.uuid,
+                            t.x, t.y, t.z,
+                            r,
+                            triggerMs
+                    ));
+                }
+            }
+        }
+
+        // 3) 入队：所有客户端都会做同样的事情 -> 大家都能看到同一次扫描
+        CacheEntry entry = new CacheEntry(originX, originY, originZ, tempQuads, targets);
+        this.offerEntry(entry);
+    }
+
+    /**
+     * ✅ 新增：以任意中心点 rebuild（客户端本地提取模型面）
+     * 这就是把你的 rebuild(Player) 抽出来的核心。
+     */
+    private List<QuadFxAPI.QuadJob> rebuildAt(Level level, double centerX, double centerY, double centerZ) {
+        List<QuadFxAPI.QuadJob> tempQuads = new LinkedList<>();
+        BlockPos.MutableBlockPos mPos = new BlockPos.MutableBlockPos();
+
+        int px = (int) Math.floor(centerX);
+        int py = (int) Math.floor(centerY);
+        int pz = (int) Math.floor(centerZ);
+
+        for (int x = px - SCAN_RADIUS; x <= px + SCAN_RADIUS; x++) {
+            for (int z = pz - SCAN_RADIUS; z <= pz + SCAN_RADIUS; z++) {
+
+                // ✅ 修改这里：扩大 Y 轴扫描范围
+                for (int y = py - SCAN_RADIUS; y <= py + SCAN_RADIUS; y++) {
+
+                    // ✅ 新增：球形裁切（XYZ 距离）
+                    double distSq = (double)(x - px)*(x - px) + (y - py)*(y - py) + (z - pz)*(z - pz);
+                    if (distSq > SCAN_RADIUS * SCAN_RADIUS) continue;
+
+                    mPos.set(x, y, z);
+                    BlockState state = level.getBlockState(mPos);
+                    if (state.isAir()) continue;
+                    ModelGeometryUtil.extractHybrid(level, mPos, state, tempQuads::add);
+                }
+            }
+        }
+        return tempQuads;
     }
 }
