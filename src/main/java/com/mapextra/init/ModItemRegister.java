@@ -1,7 +1,6 @@
 package com.mapextra.init;
 
 import com.mapextra.item.Hammer;
-import com.mapextra.item.Radar;
 import com.mapextra.item.Wrench;
 
 import net.minecraft.core.registries.Registries;
@@ -26,10 +25,6 @@ public class ModItemRegister {
     // 注册锤子物品
     public static final RegistryObject<Item> HAMMER =
             ITEMS.register("hammer", () -> new Hammer(new Item.Properties()));
-    // 注册搜索雷达物品（躲猫猫道具）
-    public static final RegistryObject<Item> RADAR =
-            ITEMS.register("radar", () -> new Radar(new Item.Properties()));
-
     // 创造模式标签页注册器
     public static final DeferredRegister<CreativeModeTab> CREATIVE_MODE_TABS =
             DeferredRegister.create(Registries.CREATIVE_MODE_TAB, MODID);

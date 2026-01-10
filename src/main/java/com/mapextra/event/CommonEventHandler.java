@@ -1,7 +1,6 @@
 package com.mapextra.event;
 
 import com.mapextra.MapExtra;
-import com.mapextra.client.particles.ParticleRenderRegistry;
 import com.mapextra.world.BeaconGlobalData;
 import com.mapextra.world.PosSavedData;
 import net.minecraft.server.level.ServerLevel;
@@ -38,13 +37,13 @@ public class CommonEventHandler {
         }
     }
 
-    @Mod.EventBusSubscriber(modid = MapExtra.MODID, bus = Mod.EventBusSubscriber.Bus.MOD, value = Dist.CLIENT)
-    public final class ClientModEvents {
-
-        @SubscribeEvent
-        public static void registerParticleProviders(RegisterParticleProvidersEvent event) {
-            ParticleRenderRegistry.onRegisterProviders(event);
-        }
-    }
+//    @Mod.EventBusSubscriber(modid = MapExtra.MODID, bus = Mod.EventBusSubscriber.Bus.MOD, value = Dist.CLIENT)
+//    public final class ClientModEvents {
+//
+//        @SubscribeEvent
+//        public static void registerParticleProviders(RegisterParticleProvidersEvent event) {
+//            ParticleRenderRegistry.onRegisterProviders(event);
+//        }
+//    }
 
 }

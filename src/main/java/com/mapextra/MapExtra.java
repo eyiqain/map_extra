@@ -1,7 +1,7 @@
 package com.mapextra;
 
 
-import com.mapextra.client.particles.ModParticles;
+//import com.mapextra.client.particles.ModParticles;
 import com.mapextra.init.ModItemRegister;
 import com.mapextra.init.ModSounds;
 import com.mapextra.net.ModMessage;
@@ -23,7 +23,7 @@ public class MapExtra {
         InitAll(bus);//注册物品，声音
   //      config();//注册配置
         //注册例子
-        ModParticles.PARTICLE_TYPES.register(bus);
+//        ModParticles.PARTICLE_TYPES.register(bus);
     }
     public void InitAll(IEventBus iEventBus){//正常注册进世界总线
         ModItemRegister.init(iEventBus);
