@@ -177,7 +177,7 @@ public class RadarRenderer extends RenderType {
             cache.renderCache(mainSpot, 32.0, entry);
             mainSpot.render(builder, matrix, true);
             //粒子
-            renderGreenDigiQuads(builder, matrix, mc, entry, now);
+            //renderGreenDigiQuads(builder, matrix, mc, entry, now);
 
             // =========================================================
             // ✅ C) 画 pulses（淡红波半径5），叠加显示

@@ -250,6 +250,7 @@ public class GeometryCache {
      */
     private List<QuadFxAPI.QuadJob> rebuildAt(Level level, double centerX, double centerY, double centerZ) {
         List<QuadFxAPI.QuadJob> tempQuads = new LinkedList<>();
+
         BlockPos.MutableBlockPos mPos = new BlockPos.MutableBlockPos();
 
         int px = (int) Math.floor(centerX);
@@ -258,14 +259,9 @@ public class GeometryCache {
 
         for (int x = px - SCAN_RADIUS; x <= px + SCAN_RADIUS; x++) {
             for (int z = pz - SCAN_RADIUS; z <= pz + SCAN_RADIUS; z++) {
+                if ((x - px) * (x - px) + (z - pz) * (z - pz) > SCAN_RADIUS * SCAN_RADIUS) continue;
 
-                // ✅ 修改这里：扩大 Y 轴扫描范围
-                for (int y = py - SCAN_RADIUS; y <= py + SCAN_RADIUS; y++) {
-
-                    // ✅ 新增：球形裁切（XYZ 距离）
-                    double distSq = (double)(x - px)*(x - px) + (y - py)*(y - py) + (z - pz)*(z - pz);
-                    if (distSq > SCAN_RADIUS * SCAN_RADIUS) continue;
-
+                for (int y = py - 4; y <= py + 7; y++) {
                     mPos.set(x, y, z);
                     BlockState state = level.getBlockState(mPos);
                     if (state.isAir()) continue;
